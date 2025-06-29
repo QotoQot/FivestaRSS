@@ -108,7 +108,7 @@ public partial class RssFeedService
         var serviceAlert = new ReviewItem
         {
             Id = $"SERVICE_ALERT_{DateTime.UtcNow:yyyyMMdd_HHmmss}",
-            Title = "🚨 SERVICE ALERT",
+            Title = "!! SERVICE ALERT",
             ReviewText = $"Service error at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC: {System.Web.HttpUtility.HtmlEncode(errorMessage)}",
             Rating = 0,
             AuthorName = "FivestaRSS Service",
@@ -202,10 +202,10 @@ public partial class RssFeedService
     static string ExtractStoreFromGuid(string guid)
     {
         if (guid.Contains("google-play"))
-            return "🅖 Google Play";
+            return "Google Play";
         
         return guid.Contains("app-store") 
-            ? " App Store" 
+            ? "App Store" 
             : "Unknown";
     }
 

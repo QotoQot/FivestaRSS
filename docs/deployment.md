@@ -1,66 +1,85 @@
 ## Prerequisites
 
-- [.NET 9 SDK installed](https://learn.microsoft.com/en-us/dotnet/core/install/linux)
+- [.NET 9 SDK installed locally](https://dotnet.microsoft.com/download/dotnet/9.0)
 - [Your API keys ready](docs/api-setup.md)
+- SSH access to your server
 
-## Step 1: Clone and Build on Server
+## Step 1: Build Locally
 
-1. Clone the repository:
+1. Clone the repository on your local machine:
    ```bash
-   cd /opt
-   sudo git clone https://github.com/QotoQot/FivestaRSS.git fivestarss
-   cd fivestarss
+   git clone https://github.com/QotoQot/FivestaRSS.git
+   cd FivestaRSS/src
    ```
 
-2. Build the application:
+2. Build a self-contained release (no .NET runtime needed on server):
    ```bash
-   dotnet build -c Release
+   dotnet publish -c Release -r linux-x64 --self-contained true -o ../publish
    ```
+   This creates a fully self-contained binary in the `publish` folder.
 
-3. Set up directories:
+3. Create deployment package:
    ```bash
-   mkdir -p keys feeds
+   cd ../publish
+   tar -czf fivestarss.tar.gz *
    ```
 
-4. Copy your API key files (`google-play-key.json` and `.p8`) to `/opt/fivestarss/keys/`
+## Step 2: Deploy to Server
 
-## Step 2: Configure for Production
-
-1. Edit configuration:
+1. Upload the package to your server:
    ```bash
-   sudo nano appsettings.json
+   rsync -avz --progress fivestarss.tar.gz user@yourserver:/tmp/
+   ```
+   (Alternative: `scp fivestarss.tar.gz user@yourserver:/tmp/`)
+
+2. On your server, create application directory:
+   ```bash
+   sudo mkdir -p /opt/fivestarss
    ```
 
-2. Update settings for production:
-   ```json
-   {
-     "Kestrel": {
-       "Endpoints": {
-         "Http": {
-           "Url": "http://0.0.0.0:5000"
-         }
-       }
-     },
-     "ApiKeys": {
-       "GooglePlay": {
-         "ServiceAccountKeyPath": "/opt/fivestarss/keys/google-play-key.json"
-       },
-       "AppStoreConnect": {
-         "PrivateKeyPath": "/opt/fivestarss/keys/AuthKey_YOUR_KEY_ID.p8"
-       }
-     },
-     "MonitoredApps": [
-       {
-         "Name": "Your App Name",
-         "GooglePlayId": "com.yourcompany.yourapp",
-         "AppStoreId": "123456789",
-         "FeedFileName": "your-app.xml"
-       }
-     ]
-   }
+3. Extract the application:
+   ```bash
+   cd /opt/fivestarss
+   sudo tar -xzf /tmp/fivestarss.tar.gz
+   rm /tmp/fivestarss.tar.gz
    ```
 
-## Step 3: Create System Service
+4. Create required directories:
+   ```bash
+   sudo mkdir -p keys feeds
+   ```
+
+5. Make the binary executable:
+   ```bash
+   sudo chmod +x FivestaRSS
+   ```
+
+## Step 3: Configure the Application
+
+1. Upload API key files from your computer:
+   ```bash
+   # Upload to /tmp first (you have write permissions there)
+   rsync -avz --progress google-play-key.json user@yourserver:/tmp/
+   rsync -avz --progress AuthKey_YOUR_KEY_ID.p8 user@yourserver:/tmp/
+   ```
+
+2. Then on your server move them to the FivestaRSS' directory:
+   ```bash
+   ssh user@yourserver
+   sudo mv /tmp/google-play-key.json /opt/fivestarss/keys/
+   sudo mv /tmp/AuthKey_YOUR_KEY_ID.p8 /opt/fivestarss/keys/
+   ```
+
+3. Edit the configuration:
+   ```bash
+   nano appsettings.json
+   ```
+
+Google's key path should be correct already, so set:
+ - App Store Connect's private key path and its two IDs
+ - App name, two store IDs, and XML filename
+
+## Step 4: Create System Service
 
 1. Create service file:
    ```bash
@@ -74,19 +93,18 @@
    After=network.target
 
    [Service]
-   Type=notify
+   Type=simple
    User=www-data
    Group=www-data
    WorkingDirectory=/opt/fivestarss
-   ExecStart=/usr/bin/dotnet run --project FivestaRSS.csproj -c Release
+   ExecStart=/opt/fivestarss/FivestaRSS
    Restart=always
    RestartSec=10
    KillSignal=SIGINT
+   TimeoutStartSec=60
    
-   # Environment variables for secrets
+   # Environment
    Environment="ASPNETCORE_ENVIRONMENT=Production"
-   Environment="ApiKeys__AppStoreConnect__IssuerId=YOUR_ISSUER_ID_HERE"
-   Environment="ApiKeys__AppStoreConnect__KeyId=YOUR_KEY_ID_HERE"
    
    # Security settings
    NoNewPrivileges=true
@@ -99,18 +117,14 @@
    WantedBy=multi-user.target
    ```
 
-3. Replace placeholder values:
-   - Change `YOUR_ISSUER_ID_HERE` to your App Store Issuer ID
-   - Change `YOUR_KEY_ID_HERE` to your App Store Key ID
-
-4. Set permissions:
+3. Set permissions:
    ```bash
    sudo chown -R www-data:www-data /opt/fivestarss
    sudo chmod -R 755 /opt/fivestarss
    sudo chmod 600 /opt/fivestarss/keys/*
    ```
 
-## Step 4: Start the Service
+## Step 5: Start the Service
 
 1. Reload systemd and start:
    ```bash
@@ -124,16 +138,10 @@
    sudo systemctl status fivestarss
    ```
 
-## Step 5: Configure nginx Reverse Proxy for Feeds
+## Step 6: Configure nginx Reverse Proxy
 
-Add a new `location` block for `/feeds/` inside your existing HTTPS-enabled `server` block. This ensures nginx will only proxy requests for feeds and all other routes remain as currently configured.
+Add to your nginx site configuration (somewhere in `/etc/nginx/sites-enabled`):
 
-Open your nginx configuration for your domain:
-```bash
-sudo nano /etc/nginx/sites-available/your-site
-```
-
-Inside the `server` block for your site, add the following:
 ```nginx
 location /feeds/ {
     proxy_pass http://localhost:5000/feeds/;
@@ -144,61 +152,65 @@ location /feeds/ {
 }
 ```
 
-After saving your changes, validate and reload nginx:
+Test and reload nginx:
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Try out `https://your-domain.com/feeds/your-app.xml` to see if it's working.
+**Done**, check `yoursite.com/feeds/yourapp.xml`
 
-## Configuration Options
+## Updating the Application
 
-Edit `appsettings.json` to customize:
+To update to a new version:
 
-- `PollingIntervalMinutes`: Review check frequency (default: 60)
-- `MaxReviewsPerFeed`: Maximum reviews per feed (default: 100)
-- `FeedDirectory`: RSS file storage location (default: "feeds")
-- `Url`: Server URL and port (default: "http://localhost:5000")
+1. Build locally:
+   ```bash
+   cd FivestaRSS/src
+   git pull
+   dotnet publish -c Release -r linux-x64 --self-contained true -o ../publish
+   cd ../publish
+   tar -czf fivestarss.tar.gz *
+   ```
 
-Restart the service with `sudo systemctl start fivestarss` to update the configuration.
-
-### For updating
-```bash
-cd /opt/fivestarss
-sudo systemctl stop fivestarss
-sudo git pull
-dotnet build -c Release
-sudo systemctl start fivestarss
-```
+2. Deploy with config backup:
+   ```bash
+   rsync -avz --progress fivestarss.tar.gz user@yourserver:/tmp/
+   ssh user@yourserver
+   sudo systemctl stop fivestarss
+   cd /opt/fivestarss
+   
+   # Backup current config
+   sudo cp appsettings.json appsettings.json.backup
+   
+   # Extract new version
+   sudo tar -xzf /tmp/fivestarss.tar.gz
+   
+   # Restore config
+   sudo mv appsettings.json.backup appsettings.json
+   
+   sudo chmod +x FivestaRSS
+   sudo chown -R www-data:www-data /opt/fivestarss
+   sudo systemctl start fivestarss
+   ```
 
 ## Troubleshooting
 
-**API key not found errors:**
-- Ensure key files are in the `keys/` folder with correct names
-- Verify environment secrets are properly configured
-
 **Service won't start:**
 - Check logs: `sudo journalctl -u fivestarss -n 50`
-- Test manually: `cd /opt/fivestarss && dotnet run`
+- Test manually: `cd /opt/fivestarss && sudo -u www-data ./FivestaRSS`
+- Verify the binary is executable: `ls -la FivestaRSS`
 
 **Permission errors:**
-- Ensure www-data owns the directory and can write to `/feeds/`
+- Ensure www-data owns all files and can write to feeds directory
 - Check API key file permissions (should be 600)
-
-**Permission denied errors from API:**
-- Google Play: Service account needs "View app information" permission
-- App Store: API key requires "Developer" role
 
 **Can't access feeds:**
 - Check firewall: `sudo ufw allow 5000/tcp`
 - Test locally: `curl http://localhost:5000/feeds/your-app.xml`
 
-**No reviews appearing:**
-- Verify app IDs in `appsettings.json` are correct
-- Check console output for specific error messages
-- In case of Google Play, only the reviews for the last 7 days can be fetched
-
-**Port already in use error:**
-- Change the port in `appsettings.json`
-
+**API errors:**
+- Verify API keys are correctly placed in `/opt/fivestarss/keys/`
+- Check IssuerId and KeyId in appsettings.json
+- Google Play: Service account needs "View app information" permission
+- App Store: API key requires "Developer" role

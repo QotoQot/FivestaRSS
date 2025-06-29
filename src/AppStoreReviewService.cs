@@ -31,8 +31,7 @@ public class AppStoreReviewService
             }
 
             // Request maximum allowed reviews (200) to minimize missing reviews between polling intervals
-            // Include response data to get lastModifiedDate for edit detection
-            var url = $"https://api.appstoreconnect.apple.com/v1/apps/{appId}/customerReviews?limit=200&sort=-createdDate&include=response&fields[customerReviews]=rating,title,body,reviewerNickname,createdDate,territory,response&fields[customerReviewResponses]=responseBody,lastModifiedDate,state,review";
+            var url = $"https://api.appstoreconnect.apple.com/v1/apps/{appId}/customerReviews?limit=200&sort=-createdDate&fields[customerReviews]=rating,title,body,reviewerNickname,createdDate,territory";
             
             _httpClient.DefaultRequestHeaders.Clear();
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {jwt}");
@@ -55,10 +54,20 @@ public class AppStoreReviewService
                 _logger.LogDebug("App Store API response received with {Length} characters", jsonContent.Length);
             }
             
-            var apiResponse = JsonSerializer.Deserialize<AppStoreReviewsResponse>(jsonContent, new JsonSerializerOptions
+            AppStoreReviewsResponse? apiResponse;
+            try
             {
-                PropertyNameCaseInsensitive = true
-            });
+                apiResponse = JsonSerializer.Deserialize<AppStoreReviewsResponse>(jsonContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse App Store API response. First 500 chars: {ResponsePreview}", 
+                    jsonContent.Length > 500 ? jsonContent[..500] : jsonContent);
+                throw new HttpRequestException($"App Store API response parsing failed: {ex.Message}", ex);
+            }
 
             var reviews = new List<ReviewItem>();
             
@@ -66,7 +75,7 @@ public class AppStoreReviewService
             {
                 foreach (var review in apiResponse.Data)
                 {
-                    var reviewItem = ConvertToReviewItem(review, appName, apiResponse.Included);
+                    var reviewItem = ConvertToReviewItem(review, appName);
                     reviews.Add(reviewItem);
                 }
             }
@@ -164,7 +173,7 @@ public class AppStoreReviewService
         }
     }
 
-    static ReviewItem ConvertToReviewItem(AppStoreReview review, string appName, List<AppStoreReviewResponseData>? included)
+    static ReviewItem ConvertToReviewItem(AppStoreReview review, string appName)
     {
         var attributes = review.Attributes ?? new AppStoreReviewAttributes();
         
@@ -174,28 +183,8 @@ public class AppStoreReviewService
             reviewDate = parsedDate;
         }
 
-        // Find the latest modification date from responses to detect edits
-        var latestModificationDate = reviewDate;
-        if (review.Relationships?.Response?.Data != null && included != null)
-        {
-            foreach (var responseRef in review.Relationships.Response.Data)
-            {
-                var responseData = included.FirstOrDefault(i => i.Id == responseRef.Id);
-                if (responseData?.Attributes?.LastModifiedDate != null)
-                {
-                    if (DateTime.TryParse(responseData.Attributes.LastModifiedDate, out var modifiedDate))
-                    {
-                        if (modifiedDate > latestModificationDate)
-                        {
-                            latestModificationDate = modifiedDate;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Create unique ID combining review ID and modification timestamp to detect edits
-        var timestampPart = latestModificationDate.ToString("yyyyMMddHHmmss");
+        // Create unique ID combining review ID and creation timestamp
+        var timestampPart = reviewDate.ToString("yyyyMMddHHmmss");
         var reviewId = $"app-store-{review.Id}-{timestampPart}";
 
         return new ReviewItem
@@ -207,7 +196,7 @@ public class AppStoreReviewService
             ReviewText = attributes.Body ?? "",
             Rating = attributes.Rating,
             AuthorName = attributes.ReviewerNickname ?? "Anonymous",
-            ReviewDate = latestModificationDate, // Use modification date instead of creation date
+            ReviewDate = reviewDate,
             Version = null,
             Territory = attributes.Territory,
             Device = null, // App Store doesn't provide device information
@@ -235,14 +224,12 @@ public class AppStoreReviewService
 public class AppStoreReviewsResponse
 {
     public List<AppStoreReview>? Data { get; set; }
-    public List<AppStoreReviewResponseData>? Included { get; set; }
 }
 
 public class AppStoreReview
 {
     public string Id { get; set; } = string.Empty;
     public AppStoreReviewAttributes? Attributes { get; set; }
-    public AppStoreReviewRelationships? Relationships { get; set; }
 }
 
 public class AppStoreReviewAttributes
@@ -253,27 +240,4 @@ public class AppStoreReviewAttributes
     public string? ReviewerNickname { get; set; }
     public string? CreatedDate { get; set; }
     public string? Territory { get; set; }
-}
-
-public class AppStoreReviewResponse
-{
-    public string? ResponseBody { get; set; }
-    public string? LastModifiedDate { get; set; }
-}
-
-public class AppStoreReviewRelationships
-{
-    public AppStoreReviewResponseRelation? Response { get; set; }
-}
-
-public class AppStoreReviewResponseRelation
-{
-    public List<AppStoreReviewResponseData>? Data { get; set; }
-}
-
-public class AppStoreReviewResponseData
-{
-    public string Id { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
-    public AppStoreReviewResponse? Attributes { get; set; }
 }
