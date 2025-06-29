@@ -3,7 +3,7 @@
 ## App Store Connect API
 
 1. In [App Store Connect](https://appstoreconnect.apple.com/), go to "Users and Access" -> "Keys" tab.
-2. Generate a new key with "Developer" access. https://developer.apple.com/help/account/access/roles/ This will give you an *Issuer ID*, a *Key ID*, and let you download a private key file (`.p8`). **You can only download the key once.** 
+2. Generate a new key with ["Developer" access](https://developer.apple.com/help/account/access/roles/). This will give you an *Issuer ID*, a *Key ID*, and let you download a private key file (`.p8`). **You can only download the key once.** 
 
 [The official documentation from Apple](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api)
 

@@ -1,7 +1,7 @@
 ## Prerequisites
 
 - [.NET 9 SDK installed](https://learn.microsoft.com/en-us/dotnet/core/install/linux)
-- [Your API keys ready](https://github.com/QotoQot/FivestaRSS/docs/api-setup.md)
+- [Your API keys ready](docs/api-setup.md)
 
 ## Step 1: Clone and Build on Server
 
