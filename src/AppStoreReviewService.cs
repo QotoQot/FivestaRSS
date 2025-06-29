@@ -27,11 +27,12 @@ public class AppStoreReviewService
             if (string.IsNullOrEmpty(jwt))
             {
                 _logger.LogError("Failed to generate JWT token for App Store Connect API");
-                return new List<ReviewItem>();
+                return [];
             }
 
             // Request maximum allowed reviews (200) to minimize missing reviews between polling intervals
-            var url = $"https://api.appstoreconnect.apple.com/v1/apps/{appId}/customerReviews?limit=200&sort=-createdDate";
+            // Include response data to get lastModifiedDate for edit detection
+            var url = $"https://api.appstoreconnect.apple.com/v1/apps/{appId}/customerReviews?limit=200&sort=-createdDate&include=response&fields[customerReviews]=rating,title,body,reviewerNickname,createdDate,territory,response&fields[customerReviewResponses]=responseBody,lastModifiedDate,state,review";
             
             _httpClient.DefaultRequestHeaders.Clear();
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {jwt}");
@@ -65,7 +66,7 @@ public class AppStoreReviewService
             {
                 foreach (var review in apiResponse.Data)
                 {
-                    var reviewItem = ConvertToReviewItem(review, appName);
+                    var reviewItem = ConvertToReviewItem(review, appName, apiResponse.Included);
                     reviews.Add(reviewItem);
                 }
             }
@@ -163,9 +164,8 @@ public class AppStoreReviewService
         }
     }
 
-    static ReviewItem ConvertToReviewItem(AppStoreReview review, string appName)
+    static ReviewItem ConvertToReviewItem(AppStoreReview review, string appName, List<AppStoreReviewResponseData>? included)
     {
-        var reviewId = $"app-store-{review.Id}";
         var attributes = review.Attributes ?? new AppStoreReviewAttributes();
         
         var reviewDate = DateTime.UtcNow;
@@ -173,6 +173,30 @@ public class AppStoreReviewService
         {
             reviewDate = parsedDate;
         }
+
+        // Find the latest modification date from responses to detect edits
+        var latestModificationDate = reviewDate;
+        if (review.Relationships?.Response?.Data != null && included != null)
+        {
+            foreach (var responseRef in review.Relationships.Response.Data)
+            {
+                var responseData = included.FirstOrDefault(i => i.Id == responseRef.Id);
+                if (responseData?.Attributes?.LastModifiedDate != null)
+                {
+                    if (DateTime.TryParse(responseData.Attributes.LastModifiedDate, out var modifiedDate))
+                    {
+                        if (modifiedDate > latestModificationDate)
+                        {
+                            latestModificationDate = modifiedDate;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create unique ID combining review ID and modification timestamp to detect edits
+        var timestampPart = latestModificationDate.ToString("yyyyMMddHHmmss");
+        var reviewId = $"app-store-{review.Id}-{timestampPart}";
 
         return new ReviewItem
         {
@@ -183,7 +207,7 @@ public class AppStoreReviewService
             ReviewText = attributes.Body ?? "",
             Rating = attributes.Rating,
             AuthorName = attributes.ReviewerNickname ?? "Anonymous",
-            ReviewDate = reviewDate,
+            ReviewDate = latestModificationDate, // Use modification date instead of creation date
             Version = null,
             Territory = attributes.Territory,
             Device = null, // App Store doesn't provide device information
@@ -211,12 +235,14 @@ public class AppStoreReviewService
 public class AppStoreReviewsResponse
 {
     public List<AppStoreReview>? Data { get; set; }
+    public List<AppStoreReviewResponseData>? Included { get; set; }
 }
 
 public class AppStoreReview
 {
     public string Id { get; set; } = string.Empty;
     public AppStoreReviewAttributes? Attributes { get; set; }
+    public AppStoreReviewRelationships? Relationships { get; set; }
 }
 
 public class AppStoreReviewAttributes
@@ -227,4 +253,27 @@ public class AppStoreReviewAttributes
     public string? ReviewerNickname { get; set; }
     public string? CreatedDate { get; set; }
     public string? Territory { get; set; }
+}
+
+public class AppStoreReviewResponse
+{
+    public string? ResponseBody { get; set; }
+    public string? LastModifiedDate { get; set; }
+}
+
+public class AppStoreReviewRelationships
+{
+    public AppStoreReviewResponseRelation? Response { get; set; }
+}
+
+public class AppStoreReviewResponseRelation
+{
+    public List<AppStoreReviewResponseData>? Data { get; set; }
+}
+
+public class AppStoreReviewResponseData
+{
+    public string Id { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public AppStoreReviewResponse? Attributes { get; set; }
 }

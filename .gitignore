@@ -47,6 +47,7 @@ BenchmarkDotNet.Artifacts/
 *.nuget.targets
 
 # Secrets and sensitive data
+**/Properties/*
 **/keys/*
 *.p8
 *.pem

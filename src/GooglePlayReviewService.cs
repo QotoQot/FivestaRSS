@@ -124,7 +124,7 @@ public class GooglePlayReviewService
                 _service = new AndroidPublisherService(new BaseClientService.Initializer
                 {
                     HttpClientInitializer = credential,
-                    ApplicationName = "fivestaRSS"
+                    ApplicationName = "FivestaRSS"
                 });
 
                 _logger.LogInformation("Google Play service initialized successfully");
@@ -148,7 +148,6 @@ public class GooglePlayReviewService
 
     static ReviewItem ConvertToReviewItem(Review review, string appName)
     {
-        var reviewId = $"google-play-{review.ReviewId}";
         var authorName = review.AuthorName ?? "Anonymous";
         var reviewText = review.Comments?.FirstOrDefault()?.UserComment?.Text ?? "";
         var rating = review.Comments?.FirstOrDefault()?.UserComment?.StarRating ?? 0;
@@ -166,10 +165,14 @@ public class GooglePlayReviewService
             var lastModified = review.Comments.FirstOrDefault()?.UserComment?.LastModified;
             if (lastModified?.Seconds != null)
             {
-                // Google provides timestamps as Unix epoch seconds
-                reviewDate = DateTimeOffset.FromUnixTimeSeconds(lastModified.Seconds.Value).DateTime;
+                // Google provides timestamps as Unix epoch seconds - ensure we get UTC DateTime
+                reviewDate = DateTimeOffset.FromUnixTimeSeconds(lastModified.Seconds.Value).UtcDateTime;
             }
         }
+
+        // Create unique ID combining review ID and lastModified timestamp to detect edits
+        var timestampPart = reviewDate.ToString("yyyyMMddHHmmss");
+        var reviewId = $"google-play-{review.ReviewId}-{timestampPart}";
 
         return new ReviewItem
         {
