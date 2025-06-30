@@ -1,6 +1,6 @@
 # FivestaRSS: RSS for App Store and Google Play reviews
 
-FivestaRSS is a tiny self-hosted service that monitors your apps' reviews on both stores, converting them into an RSS 2.0 feed (one per app). You can then easily plug the feed into your Slack, Discord or any other place that supports RSS.
+⭐️⭐️⭐️⭐️⭐️ FivestaRSS is a tiny self-hosted service that monitors your apps' reviews on both stores, converting them into an RSS 2.0 feed (one per app). You can then easily plug the feed into your Slack, Discord or any other place that supports RSS.
 
 ## Features
 
@@ -14,4 +14,4 @@ Before you begin, you'll need to get both App Store Connect and Google Play Cons
 
 Once it's up and running, [see this guide](docs/chats.md) to connect it to Discord or Slack servers.
 
-⭐️⭐️⭐️⭐️⭐️
+

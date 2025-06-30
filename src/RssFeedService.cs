@@ -82,13 +82,16 @@ public partial class RssFeedService
         var maxReviews = _configuration.GetValue("FeedSettings:MaxReviewsPerFeed", 100);
         var reviewsToWrite = reviews.Take(maxReviews).ToList();
 
+        var baseUrl = _configuration.GetValue<string>("FeedSettings:BaseUrl", "");
+        
         var rss = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement("rss",
                 new XAttribute("version", "2.0"),
                 new XElement("channel",
                     new XElement("title", $"App Reviews - {feedFileName}"),
-                    new XElement("link", "http://localhost:5000"),
+                    // Only include link element if BaseUrl is configured
+                    !string.IsNullOrEmpty(baseUrl) ? new XElement("link", baseUrl) : null,
                     new XElement("description", "Latest app reviews"),
                     new XElement("language", "en-us"),
                     new XElement("lastBuildDate", DateTime.UtcNow.ToString("R")), // RFC 822 date format required by RSS spec
@@ -138,8 +141,8 @@ public partial class RssFeedService
     {
         // Use filled (★) and empty (☆) stars to create visual rating that's parseable on read
         var stars = new string('★', review.Rating) + new string('☆', 5 - review.Rating);
-        var sanitizedTitle = System.Web.HttpUtility.HtmlEncode(review.Title);
-        return $"{stars} {sanitizedTitle}";
+        // Don't HTML encode here - XElement will handle XML encoding automatically
+        return $"{stars} {review.Title}";
     }
 
     static string CreateDescription(ReviewItem review)

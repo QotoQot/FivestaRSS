@@ -78,6 +78,14 @@
 Google's key path should be correct already, so set:
  - App Store Connect's private key path and its two IDs
  - App name, two store IDs, and XML filename
+ - (Optional) BaseUrl in FeedSettings if you want the RSS feed to include a channel link. Example:
+   ```json
+   "FeedSettings": {
+     "BaseUrl": "https://yoursite.com",
+     ...
+   }
+   ```
+   If not set, the RSS feed will not include a channel link element, which is valid per RSS 2.0 spec.
 
 ## Step 4: Create System Service
 
